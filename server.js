@@ -98,7 +98,7 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // 3. Dynamic Twilio WhatsApp dispatch using Pre-Approved Content Template
+    // 3. Dynamic Twilio WhatsApp dispatch
     const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
     const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
     const fromNumber = (process.env.TWILIO_WHATSAPP_NUMBER || '').trim();
@@ -107,19 +107,36 @@ app.post('/api/bookings', async (req, res) => {
     if (sid && token && fromNumber && toNumber) {
       try {
         const twilioClient = twilio(sid, token);
+        const sanitizedPhone = cleanPhoneNumber(phone);
+        const prefilledText = encodeURIComponent(
+          `Hello ${client_name}, thank you for reaching out to Elite Tailor! Regarding your consultation request for ${service_type}...`
+        );
+        const waReplyUrl = `https://wa.me/${sanitizedPhone}?text=${prefilledText}`;
+
         const formattedFrom = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
         const formattedTo = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
 
-        // Uses Twilio's standard pre-approved appointment template to bypass ContentSid errors
+        const whatsappMessage = 
+`🧵 *NEW FITTING REQUEST #${bookingId}* 🧵
+
+👤 *Client:* ${client_name}
+📞 *Phone:* ${phone}
+📧 *Email:* ${email || 'Not provided'}
+👗 *Service:* ${service_type}
+📅 *Preferred Date:* ${finalDate} at ${finalTime}
+
+📝 *Inquiry Details:*
+${notes || 'None'}
+
+───────────────────
+💬 *TAP TO REPLY DIRECTLY TO CLIENT:*
+${waReplyUrl}`;
+
         twilioClient.messages
           .create({
             from: formattedFrom,
             to: formattedTo,
-            contentSid: 'HXb5b62578e6e4ff925d6d900662333174',
-            contentVariables: JSON.stringify({
-              1: client_name,
-              2: `${finalDate} at ${finalTime} (${service_type})`,
-            }),
+            body: whatsappMessage,
           })
           .then((msg) => {
             console.log(`WhatsApp notification dispatched successfully! Message SID: ${msg.sid}`);
