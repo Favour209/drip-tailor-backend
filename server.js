@@ -64,7 +64,7 @@ app.post('/api/bookings', async (req, res) => {
   try {
     // 1. Save appointment to PostgreSQL
     const insertQuery = `
-      INSERT INTO bookings (client_name, phone, email, service_type, booking_date, booking_time, notes, status)
+      INSERT INTO public.bookings (client_name, phone, email, service_type, booking_date, booking_time, notes, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7, 'Pending')
       RETURNING id, created_at;
     `;
