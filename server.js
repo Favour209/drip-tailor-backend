@@ -8,7 +8,7 @@ const db = require('./db');
 
 const app = express();
 
-// Global safety catchers to prevent unhandled promise rejections from abruptly killing the server
+// Global safety catchers
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -31,7 +31,7 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
 
-// Nodemailer transport setup for admin notifications
+// Nodemailer transport setup
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: Number(process.env.EMAIL_PORT) || 587,
@@ -42,29 +42,28 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Helper function to clean phone numbers for wa.me links
 function cleanPhoneNumber(phone) {
   return phone.replace(/\D/g, '');
 }
 
 // POST: Handle new booking submissions
 app.post('/api/bookings', async (req, res) => {
-  const { client_name, phone, email, service_type, notes } = req.body;
+  const { client_name, phone, email, service_type, booking_date, booking_time, notes } = req.body;
 
-  // Validate required client inputs
+  // Validate required inputs
   if (!client_name || !phone || !service_type) {
     return res.status(400).json({ error: 'Please provide all required fields.' });
   }
 
-  // Automatically generate current Date and Time on submission
+  // Fallback to today's date and 10:00 AM if frontend sends empty date/time values
   const now = new Date();
-  const autoBookingDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-  const autoBookingTime = now.toLocaleTimeString('en-US', { hour12: false }); // HH:MM:SS
+  const finalDate = booking_date || now.toISOString().split('T')[0];
+  const finalTime = booking_time || '10:00';
 
   try {
     // 1. Save appointment to PostgreSQL
     const insertQuery = `
-      INSERT INTO public.bookings (client_name, phone, email, service_type, booking_date, booking_time, notes, status)
+      INSERT INTO bookings (client_name, phone, email, service_type, booking_date, booking_time, notes, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7, 'Pending')
       RETURNING id, created_at;
     `;
@@ -73,15 +72,15 @@ app.post('/api/bookings', async (req, res) => {
       phone,
       email || null,
       service_type,
-      autoBookingDate,
-      autoBookingTime,
+      finalDate,
+      finalTime,
       notes || '',
     ];
 
     const { rows } = await db.query(insertQuery, values);
     const bookingId = rows[0].id;
 
-    // 2. Dispatch email notification in background
+    // 2. Dispatch email notification (background)
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       const mailOptions = {
         from: `"Elite Tailor Bookings" <${process.env.EMAIL_USER}>`,
@@ -94,7 +93,7 @@ app.post('/api/bookings', async (req, res) => {
           <p><strong>Phone:</strong> ${phone}</p>
           <p><strong>Email:</strong> ${email || 'Not provided'}</p>
           <p><strong>Service:</strong> ${service_type}</p>
-          <p><strong>Submitted Date & Time:</strong> ${autoBookingDate} at ${autoBookingTime}</p>
+          <p><strong>Preferred Date & Time:</strong> ${finalDate} at ${finalTime}</p>
           <p><strong>Notes:</strong> ${notes || 'None'}</p>
         `,
       };
@@ -104,7 +103,7 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // 3. Dispatch WhatsApp notification to Tailor via Twilio
+    // 3. Dispatch WhatsApp notification (background)
     if (twilioClient && process.env.TWILIO_WHATSAPP_NUMBER && process.env.STUDIO_WHATSAPP_NUMBER) {
       const sanitizedPhone = cleanPhoneNumber(phone);
       const prefilledText = encodeURIComponent(
@@ -119,7 +118,7 @@ app.post('/api/bookings', async (req, res) => {
 📞 *Phone:* ${phone}
 📧 *Email:* ${email || 'Not provided'}
 👗 *Service:* ${service_type}
-📅 *Submitted:* ${autoBookingDate} at ${autoBookingTime}
+📅 *Preferred Date:* ${finalDate} at ${finalTime}
 
 📝 *Inquiry Details:*
 ${notes || 'None'}
