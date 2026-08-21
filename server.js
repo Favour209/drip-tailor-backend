@@ -98,58 +98,34 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // 3. Dynamic Twilio WhatsApp dispatch with Diagnostic Logging
+    // 3. Dynamic Twilio WhatsApp dispatch using Pre-Approved Content Template
     const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
     const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
     const fromNumber = (process.env.TWILIO_WHATSAPP_NUMBER || '').trim();
     const toNumber = (process.env.STUDIO_WHATSAPP_NUMBER || '').trim();
 
     if (sid && token && fromNumber && toNumber) {
-      console.log(`[Twilio Debug] SID Prefix: "${sid.substring(0, 4)}" | SID Length: ${sid.length}`);
-      console.log(`[Twilio Debug] From: ${fromNumber} | To: ${toNumber}`);
-
       try {
         const twilioClient = twilio(sid, token);
-        const sanitizedPhone = cleanPhoneNumber(phone);
-        const prefilledText = encodeURIComponent(
-          `Hello ${client_name}, thank you for reaching out to Elite Tailor! Regarding your consultation request for ${service_type}...`
-        );
-        const waReplyUrl = `https://wa.me/${sanitizedPhone}?text=${prefilledText}`;
-
-        // Ensure "whatsapp:" prefix is always formatted properly
         const formattedFrom = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
         const formattedTo = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
 
-        const whatsappMessage = 
-`🧵 *NEW FITTING REQUEST #${bookingId}* 🧵
-
-👤 *Client:* ${client_name}
-📞 *Phone:* ${phone}
-📧 *Email:* ${email || 'Not provided'}
-👗 *Service:* ${service_type}
-📅 *Preferred Date:* ${finalDate} at ${finalTime}
-
-📝 *Inquiry Details:*
-${notes || 'None'}
-
-───────────────────
-💬 *TAP TO REPLY DIRECTLY TO CLIENT:*
-${waReplyUrl}`;
-
+        // Uses Twilio's standard pre-approved appointment template to bypass ContentSid errors
         twilioClient.messages
           .create({
             from: formattedFrom,
             to: formattedTo,
-            body: whatsappMessage,
+            contentSid: 'HXb5b62578e6e4ff925d6d900662333174',
+            contentVariables: JSON.stringify({
+              1: client_name,
+              2: `${finalDate} at ${finalTime} (${service_type})`,
+            }),
           })
           .then((msg) => {
-            console.log(`WhatsApp sent successfully! Message SID: ${msg.sid}`);
+            console.log(`WhatsApp notification dispatched successfully! Message SID: ${msg.sid}`);
           })
           .catch((err) => {
             console.error('Twilio WhatsApp dispatch error:', err.message);
-            if (err.code === 20003) {
-              console.error('--> AUTH ERROR DETECTED: Check if TWILIO_ACCOUNT_SID is set to your Account SID (starts with AC) and NOT an API Key (starts with SK).');
-            }
           });
       } catch (clientErr) {
         console.error('Failed to initialize Twilio client:', clientErr.message);
