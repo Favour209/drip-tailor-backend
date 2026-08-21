@@ -26,11 +26,6 @@ app.get('/', (req, res) => {
   res.send('Elite Tailor API is running');
 });
 
-// Twilio Setup
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
-
 // Nodemailer transport setup
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -55,7 +50,7 @@ app.post('/api/bookings', async (req, res) => {
     return res.status(400).json({ error: 'Please provide all required fields.' });
   }
 
-  // Fallback to today's date and 10:00 AM if frontend sends empty date/time values
+  // Fallback to today's date and 10:00 AM if empty
   const now = new Date();
   const finalDate = booking_date || now.toISOString().split('T')[0];
   const finalTime = booking_time || '10:00';
@@ -103,15 +98,26 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // 3. Dispatch WhatsApp notification (background)
-    if (twilioClient && process.env.TWILIO_WHATSAPP_NUMBER && process.env.STUDIO_WHATSAPP_NUMBER) {
-      const sanitizedPhone = cleanPhoneNumber(phone);
-      const prefilledText = encodeURIComponent(
-        `Hello ${client_name}, thank you for reaching out to Elite Tailor! Regarding your consultation request for ${service_type}...`
-      );
-      const waReplyUrl = `https://wa.me/${sanitizedPhone}?text=${prefilledText}`;
+    // 3. Dynamic Twilio WhatsApp dispatch
+    const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
+    const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
+    const fromNumber = (process.env.TWILIO_WHATSAPP_NUMBER || '').trim();
+    const toNumber = (process.env.STUDIO_WHATSAPP_NUMBER || '').trim();
 
-      const whatsappMessage = 
+    if (sid && token && fromNumber && toNumber) {
+      try {
+        const twilioClient = twilio(sid, token);
+        const sanitizedPhone = cleanPhoneNumber(phone);
+        const prefilledText = encodeURIComponent(
+          `Hello ${client_name}, thank you for reaching out to Elite Tailor! Regarding your consultation request for ${service_type}...`
+        );
+        const waReplyUrl = `https://wa.me/${sanitizedPhone}?text=${prefilledText}`;
+
+        // Ensure "whatsapp:" prefix is always formatted properly
+        const formattedFrom = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+        const formattedTo = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
+
+        const whatsappMessage = 
 `🧵 *NEW FITTING REQUEST #${bookingId}* 🧵
 
 👤 *Client:* ${client_name}
@@ -127,15 +133,20 @@ ${notes || 'None'}
 💬 *TAP TO REPLY DIRECTLY TO CLIENT:*
 ${waReplyUrl}`;
 
-      twilioClient.messages
-        .create({
-          from: process.env.TWILIO_WHATSAPP_NUMBER,
-          to: process.env.STUDIO_WHATSAPP_NUMBER,
-          body: whatsappMessage,
-        })
-        .catch((err) => {
-          console.error('Twilio WhatsApp dispatch error:', err.message);
-        });
+        twilioClient.messages
+          .create({
+            from: formattedFrom,
+            to: formattedTo,
+            body: whatsappMessage,
+          })
+          .catch((err) => {
+            console.error('Twilio WhatsApp dispatch error:', err.message);
+          });
+      } catch (clientErr) {
+        console.error('Failed to initialize Twilio client:', clientErr.message);
+      }
+    } else {
+      console.log('Skipping Twilio: Missing or incomplete Twilio env variables.');
     }
 
     // 4. Return confirmation payload
