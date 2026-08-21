@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "start": "node server.js",
-  "migrate": "knex migrate:latest --env production"
-},
+    "start": "node server.js",
+    "migrate": "knex migrate:latest --env production"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
