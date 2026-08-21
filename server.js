@@ -98,13 +98,16 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // 3. Dynamic Twilio WhatsApp dispatch
+    // 3. Dynamic Twilio WhatsApp dispatch with Diagnostic Logging
     const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
     const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
     const fromNumber = (process.env.TWILIO_WHATSAPP_NUMBER || '').trim();
     const toNumber = (process.env.STUDIO_WHATSAPP_NUMBER || '').trim();
 
     if (sid && token && fromNumber && toNumber) {
+      console.log(`[Twilio Debug] SID Prefix: "${sid.substring(0, 4)}" | SID Length: ${sid.length}`);
+      console.log(`[Twilio Debug] From: ${fromNumber} | To: ${toNumber}`);
+
       try {
         const twilioClient = twilio(sid, token);
         const sanitizedPhone = cleanPhoneNumber(phone);
@@ -139,8 +142,14 @@ ${waReplyUrl}`;
             to: formattedTo,
             body: whatsappMessage,
           })
+          .then((msg) => {
+            console.log(`WhatsApp sent successfully! Message SID: ${msg.sid}`);
+          })
           .catch((err) => {
             console.error('Twilio WhatsApp dispatch error:', err.message);
+            if (err.code === 20003) {
+              console.error('--> AUTH ERROR DETECTED: Check if TWILIO_ACCOUNT_SID is set to your Account SID (starts with AC) and NOT an API Key (starts with SK).');
+            }
           });
       } catch (clientErr) {
         console.error('Failed to initialize Twilio client:', clientErr.message);
