@@ -8,9 +8,23 @@ const db = require('./db');
 
 const app = express();
 
+// Global safety catchers to prevent unhandled promise rejections from abruptly killing the server
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception thrown:', err);
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Root Health Check Endpoint
+app.get('/', (req, res) => {
+  res.send('Elite Tailor API is running');
+});
 
 // Twilio Setup
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -20,7 +34,7 @@ const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : n
 // Nodemailer transport setup for admin notifications
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT),
+  port: Number(process.env.EMAIL_PORT) || 587,
   secure: Number(process.env.EMAIL_PORT) === 465,
   auth: {
     user: process.env.EMAIL_USER,
@@ -126,13 +140,13 @@ ${waReplyUrl}`;
     }
 
     // 4. Return confirmation payload
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Booking created successfully',
       bookingId,
     });
   } catch (error) {
-    console.error('Booking insertion error:', error);
-    res.status(500).json({ error: 'Internal server error processing booking.' });
+    console.error('DATABASE INSERT ERROR:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error processing booking.' });
   }
 });
 
